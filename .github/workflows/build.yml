@@ -24,7 +24,7 @@ on:
 jobs:
   build-docs:
     runs-on: ubuntu-latest
-    steps: 
+    steps:
       - name: Checkout
         uses: actions/checkout@v3
 
@@ -353,7 +353,7 @@ jobs:
           name: palera1n-${{ matrix.os }}-${{ matrix.arch }}.dSYM
           path: palera1n-${{ matrix.os }}-${{ matrix.arch }}.dSYM
           retention-days: 1
-
+      
   darwin-dist:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: macos-latest
@@ -461,6 +461,15 @@ jobs:
           dpkg-deb -Zzstd -b stage palera1n_iphoneos-arm64.deb
           mv palera1n*.deb ready/
           rm -rf stage
+      
+      - name: Save build tag
+        run: echo "$(git describe --dirty --tags --abbrev=7 | sed 's|-dirty||')" > build-tag.txt
+      
+      - name: Upload build tag
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-tag
+          path: build-tag.txt
 
       - name: Upload artifact
         if: ${{ github.event_name != 'pull_request' }}
@@ -783,3 +792,25 @@ jobs:
           dryRun: false
           localDir: 'ready/'
           remoteDir: '/palera1n/artifacts/c-rewrite'
+
+  discord-alert:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: [build-docs, build-darwin, darwin-dist, build-Linux]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Get branch name
+        uses: nelonoel/branch-name@v1.0.1
+
+      - name: Download build tag
+        uses: actions/download-artifact@v3
+        with:
+          name: build-tag
+
+      - name: Send Discord build message
+        run: |
+          COMMITMESSAGE=`git log --pretty=format:'- \`%h\` %s' -1 --reverse` &&
+          (curl "${{ secrets.DISCORD_WEBHOOK }}" -sS -H "Content-Type:application/json" -X POST -d "{\"content\":null,\"embeds\":[{\"title\":\"[palera1n:${BRANCH_NAME}] Nightly Build ${{ github.run_number }}\",\"url\":\"https://github.com/palera1n/palera1n/actions/runs/${GITHUB_RUN_ID}\",\"color\":2829617,\"fields\":[{\"name\":\"Build tag\",\"value\":\"- \`$(cat build-tag.txt | sed 's|\n||')\`\"},{\"name\":\"Changes\",\"value\":\"$(echo $COMMITMESSAGE | awk '{printf "%s\\n", $0}')\"},{\"name\":\"Artifacts\",\"value\":\"- [palera1n-ios](https://cdn.nickchan.lol/palera1n/artifacts/c-rewrite/palera1n-ios)\n- [palera1n-linux-arm64](https://cdn.nickchan.lol/palera1n/artifacts/c-rewrite/palera1n-linux-arm64)\n- [palera1n-linux-armel](https://cdn.nickchan.lol/palera1n/artifacts/c-rewrite/palera1n-linux-armel)\n- [palera1n-linux-x86](https://cdn.nickchan.lol/palera1n/artifacts/c-rewrite/palera1n-linux-x86)\n- [palera1n-linux-x86_64](https://cdn.nickchan.lol/palera1n/artifacts/c-rewrite/palera1n-linux-x86_64)\n- [palera1n-macos-universal](https://cdn.nickchan.lol/palera1n/artifacts/c-rewrite/palera1n-macos-universal)\n- [palera1n.1.html](https://cdn.nickchan.lol/palera1n/artifacts/c-rewrite/palera1n.1.html)\"}],\"footer\":{\"text\":\"https://github.com/palera1n/palera1n\", \"icon_url\": \"https://media.discordapp.net/attachments/1054239098006683688/1107471339176071288/palera1n_ios_copy.png?width=1208&height=1208\",\"timestamp\":\"$(date -u +"%FT%TZ")\"}}],\"username\":\"GitHub Actions\",\"avatar_url\":\"https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png\"}")
+    
